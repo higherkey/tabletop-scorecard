@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Keep score for any tabletop game, offline, on your phone or computer.">
+  <meta name="theme-color" content="#1f6f5c" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141311" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Scorecard">
+  <title>Scorecard</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./css/tokens.css">
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/components.css">
+  <script type="module" src="./js/app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="app-title" href="#/"><img src="./icons/icon.svg" alt="" width="28" height="28"> Scorecard</a>
+  </header>
+  <main id="app" class="app-main"></main>
+  <dialog id="keypad" class="keypad" aria-labelledby="keypad-title">
+    <div class="keypad-body">
+      <p id="keypad-title" class="keypad-title"></p>
+      <output id="keypad-display" class="keypad-display" aria-live="polite"></output>
+      <div class="keypad-grid">
+        <button type="button" class="key" data-key="1">1</button>
+        <button type="button" class="key" data-key="2">2</button>
+        <button type="button" class="key" data-key="3">3</button>
+        <button type="button" class="key" data-key="4">4</button>
+        <button type="button" class="key" data-key="5">5</button>
+        <button type="button" class="key" data-key="6">6</button>
+        <button type="button" class="key" data-key="7">7</button>
+        <button type="button" class="key" data-key="8">8</button>
+        <button type="button" class="key" data-key="9">9</button>
+        <button type="button" class="key" data-key="neg" aria-label="Toggle negative">±</button>
+        <button type="button" class="key" data-key="0">0</button>
+        <button type="button" class="key" data-key="back" aria-label="Backspace">⌫</button>
+      </div>
+      <div class="keypad-actions">
+        <button type="button" class="btn" data-key="clear">Clear</button>
+        <button type="button" class="btn" data-key="next">Next</button>
+        <button type="button" class="btn btn-primary" data-key="done">Done</button>
+      </div>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <noscript><p>Scorecard needs JavaScript to run. Please enable it in your browser settings.</p></noscript>
+</body>
+</html>
