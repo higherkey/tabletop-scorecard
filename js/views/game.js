@@ -1,34 +1,65 @@
 import { h } from '../dom.js';
 import { standings, totals } from '../model.js';
+import { avatar, medal } from '../ui.js';
+import { icon } from '../icons.js';
 
-export function renderGame(game, actions) {
+export function renderGame(game, actions, { canShare = false, readOnly = false } = {}) {
   const players = game.players;
   const totalMap = totals(game);
   const ranked = standings(game);
   const anyScore = game.rounds.some((r) => Object.keys(r.scores).length > 0);
+  const finished = game.finishedAt != null;
+  const frozen = finished || readOnly;
 
-  const renameBtn = h('button', {
+  const shareBtn = canShare
+    ? h('button', {
+      type: 'button',
+      class: 'icon-btn',
+      'aria-label': 'Share game',
+      onClick: () => actions.shareGame(game.id),
+    }, icon('share-2'))
+    : null;
+
+  const renameBtn = readOnly ? null : h('button', {
     type: 'button',
-    class: 'btn btn-ghost',
-    onclick: () => {
+    class: 'icon-btn',
+    'aria-label': 'Rename game',
+    onClick: () => {
       const next = window.prompt('Rename game', game.name);
       if (next !== null) actions.renameGame(game.id, next);
     },
-  }, 'Rename');
+  }, h('span', { 'aria-hidden': 'true' }, 'Aa'));
 
   const header = h('div', { class: 'view-header' },
     h('h2', { class: 'view-title', tabindex: '-1' }, game.name),
-    h('div', { class: 'view-header-actions' }, renameBtn));
+    h('div', { class: 'view-header-actions' }, shareBtn, renameBtn));
 
   const mode = h('p', { class: 'muted game-mode' },
-    game.lowWins ? 'Lowest score wins' : 'Highest score wins');
+    (game.lowWins ? 'Lowest score wins' : 'Highest score wins') + (game.shareToken ? ' · Shared' : ''));
+
+  let banner = null;
+  if (finished) {
+    const top = ranked.filter((s) => s.rank === 1);
+    let title = 'Game finished';
+    let subtitle = null;
+    if (anyScore && top.length > 0) {
+      const names = top.map((s) => s.player.name);
+      title = top.length === 1 ? `${names[0]} wins!` : `${names.join(' & ')} tie!`;
+      subtitle = `Final · ${top[0].total} points`;
+    }
+    banner = h('div', { class: 'winner-banner', role: 'status' },
+      icon('trophy', { size: 28 }),
+      h('div', null,
+        h('p', { class: 'winner-title' }, title),
+        subtitle ? h('p', { class: 'muted' }, subtitle) : null));
+  }
 
   const standingsList = h('ol', { class: 'standings', 'aria-label': 'Standings' },
     ranked.map((s) => {
       const isLeader = anyScore && s.rank === 1;
       return h('li', { class: `standing pc-${s.player.color}${isLeader ? ' is-leader' : ''}` },
-        h('span', { class: 'standing-rank' }, `#${s.rank}`),
-        h('span', { class: 'swatch', 'aria-hidden': 'true' }),
+        medal(s.rank),
+        avatar(s.player.name, s.player.color, { size: 'sm' }),
         h('span', { class: 'standing-name truncate', title: s.player.name }, s.player.name),
         h('span', { class: 'standing-total' }, String(s.total)));
     }));
@@ -37,10 +68,10 @@ export function renderGame(game, actions) {
     h('tr', null,
       h('th', { scope: 'col', class: 'round-col' }, 'Round'),
       players.map((p) => h('th', { scope: 'col', class: `player-col pc-${p.color}` },
-        h('span', { class: 'swatch', 'aria-hidden': 'true' }),
+        avatar(p.name, p.color, { size: 'sm' }),
         ' ',
         h('span', { class: 'truncate', title: p.name }, p.name))),
-      h('th', { scope: 'col', class: 'round-actions' },
+      frozen ? null : h('th', { scope: 'col', class: 'round-actions' },
         h('span', { class: 'visually-hidden' }, 'Actions'))));
 
   const tbody = h('tbody', null,
@@ -51,33 +82,34 @@ export function renderGame(game, actions) {
         players.map((p) => {
           const v = round.scores[p.id];
           const has = typeof v === 'number';
+          const label = `Round ${n}, ${p.name}: ${has ? v : 'no score'}`;
+          if (frozen) {
+            return h('td', null,
+              h('span', { class: 'score-value' }, has ? String(v) : '–'));
+          }
           return h('td', null,
             h('button', {
               type: 'button',
               class: has ? 'score-cell' : 'score-cell is-empty',
               dataset: { round: round.id, player: p.id },
-              'aria-label': `Round ${n}, ${p.name}: ${has ? v : 'no score'}`,
-              onclick: () => actions.openScore(game.id, round.id, p.id),
+              'aria-label': label,
+              onClick: () => actions.openScore(game.id, round.id, p.id),
             }, has ? String(v) : '–'));
         }),
-        h('td', { class: 'round-actions' },
+        frozen ? null : h('td', { class: 'round-actions' },
           h('button', {
             type: 'button',
             class: 'icon-btn',
             'aria-label': `Delete round ${n}`,
-            onclick: () => {
-              const hasScore = Object.keys(round.scores).length > 0;
-              if (hasScore && !window.confirm(`Delete round ${n}?`)) return;
-              actions.removeRound(game.id, round.id);
-            },
-          }, h('span', { 'aria-hidden': 'true' }, '×'))));
+            onClick: () => actions.removeRound(game.id, round.id),
+          }, icon('x', { size: 18 }))));
     }));
 
   const tfoot = h('tfoot', null,
     h('tr', { class: 'totals-row' },
       h('th', { scope: 'row', class: 'round-col' }, 'Total'),
       players.map((p) => h('td', { class: 'total-cell' }, String(totalMap[p.id] ?? 0))),
-      h('td', { class: 'round-actions' })));
+      frozen ? null : h('td', { class: 'round-actions' })));
 
   const table = h('div', { class: 'table-scroll' },
     h('table', { class: 'score-table' },
@@ -86,18 +118,33 @@ export function renderGame(game, actions) {
       tbody,
       tfoot));
 
-  const actionsBar = h('div', { class: 'game-actions' },
-    h('button', {
-      type: 'button',
-      class: 'btn btn-primary',
-      onclick: () => actions.addRound(game.id),
-    }, '+ Add round'),
-    h('button', {
-      type: 'button',
-      class: 'btn',
-      onclick: () => actions.rematch(game.id),
-    }, 'Rematch'));
+  const actionsBar = readOnly ? null : h('div', { class: 'game-actions' },
+    finished
+      ? [
+        h('button', {
+          type: 'button',
+          class: 'btn',
+          onClick: () => actions.reopenGame(game.id),
+        }, icon('rotate-ccw'), 'Reopen'),
+        h('button', {
+          type: 'button',
+          class: 'btn btn-primary',
+          onClick: () => actions.rematch(game.id),
+        }, icon('dice-5'), 'Rematch'),
+      ]
+      : [
+        h('button', {
+          type: 'button',
+          class: 'btn btn-primary',
+          onClick: () => actions.addRound(game.id),
+        }, icon('plus'), 'Add round'),
+        h('button', {
+          type: 'button',
+          class: 'btn',
+          onClick: () => actions.finishGame(game.id),
+        }, icon('flag'), 'Finish'),
+      ]);
 
   return h('section', { class: 'view view-game' },
-    header, mode, standingsList, table, actionsBar);
+    header, mode, banner, standingsList, table, actionsBar);
 }

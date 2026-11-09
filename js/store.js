@@ -2,6 +2,7 @@ import { emptyState, validateState } from './model.js';
 
 export const STORAGE_KEY = 'tabletop-scorecard:v1';
 export const BACKUP_PREFIX = 'tabletop-scorecard:backup:';
+const MAX_BACKUPS = 5;
 
 export function safeLocalStorage() {
   try {
@@ -28,10 +29,27 @@ export function createStore(storage = safeLocalStorage(), now = () => Date.now()
   function backup(raw) {
     try {
       storage.setItem(BACKUP_PREFIX + now(), raw);
+      return true;
     } catch {
       // best effort: a failed backup must not block loading, but persist must retry it
       backupFailed = true;
       pendingBackupRaw = raw;
+      return false;
+    }
+  }
+
+  function pruneBackups() {
+    try {
+      const suffix = (k) => Number(k.slice(BACKUP_PREFIX.length));
+      const keys = [];
+      for (let i = 0; i < storage.length; i += 1) {
+        const k = storage.key(i);
+        if (typeof k === 'string' && k.startsWith(BACKUP_PREFIX) && Number.isFinite(suffix(k))) keys.push(k);
+      }
+      keys.sort((a, b) => suffix(b) - suffix(a));
+      for (const k of keys.slice(MAX_BACKUPS)) storage.removeItem(k);
+    } catch {
+      // pruning is best effort
     }
   }
 
@@ -53,8 +71,12 @@ export function createStore(storage = safeLocalStorage(), now = () => Date.now()
       backup(raw);
       return emptyState();
     }
-    const { state: valid, dropped } = validateState(parsed);
-    if (valid === null || dropped > 0) backup(raw);
+    const { state: valid, dropped, migrated } = validateState(parsed);
+    if (valid === null || dropped > 0 || migrated) {
+      const backedUp = backup(raw);
+      // Once the original is safe, store the normalized state so the backup is not re-written on every load.
+      if (backedUp && valid !== null) persist(valid);
+    }
     return valid ?? emptyState();
   }
 
@@ -123,6 +145,16 @@ export function createStore(storage = safeLocalStorage(), now = () => Date.now()
     update,
     subscribe,
     getPersistStatus: () => persistStatus,
+    backupState() {
+      if (!storage) return false;
+      try {
+        storage.setItem(BACKUP_PREFIX + now(), JSON.stringify(state));
+      } catch {
+        return false;
+      }
+      pruneBackups();
+      return true;
+    },
     destroy() {
       if (syncTabs) window.removeEventListener('storage', onStorage);
     },

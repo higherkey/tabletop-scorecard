@@ -12,6 +12,15 @@ function fakeStorage(initial = {}) {
     setItem(k, v) {
       storage.data.set(k, String(v));
     },
+    removeItem(k) {
+      storage.data.delete(k);
+    },
+    key(i) {
+      return [...storage.data.keys()][i] ?? null;
+    },
+    get length() {
+      return storage.data.size;
+    },
   };
   return storage;
 }
@@ -69,7 +78,7 @@ describe('createStore load', () => {
   });
 
   test('invalid top-level state writes a backup and does not overwrite STORAGE_KEY', () => {
-    const raw = JSON.stringify({ version: 2, games: [] });
+    const raw = JSON.stringify({ version: 3, games: [] });
     const storage = fakeStorage({ [STORAGE_KEY]: raw });
     const store = createStore(storage, () => 77);
 
@@ -78,16 +87,17 @@ describe('createStore load', () => {
     assert.deepEqual(store.getState(), emptyState());
   });
 
-  test('dropped games write a backup and keep the valid games', () => {
+  test('dropped games write a backup, then persist the normalized state with the valid games', () => {
     const good = sampleGame('Keep');
     const raw = JSON.stringify({ version: 1, games: [good, { id: 3 }] });
     const storage = fakeStorage({ [STORAGE_KEY]: raw });
     const store = createStore(storage, () => 555);
 
     assert.equal(storage.data.get(BACKUP_PREFIX + 555), raw);
-    assert.equal(storage.data.get(STORAGE_KEY), raw);
     assert.equal(store.getState().games.length, 1);
     assert.equal(store.getState().games[0].name, 'Keep');
+    assert.deepEqual(validateState(JSON.parse(storage.data.get(STORAGE_KEY))).state, store.getState());
+    assert.equal(JSON.parse(storage.data.get(STORAGE_KEY)).games.length, 1);
   });
 
   test('valid storage writes no backup', () => {
@@ -256,5 +266,143 @@ describe('createStore storage failures', () => {
     assert.equal(storage.data.get(STORAGE_KEY), raw);
     assert.equal(store.getPersistStatus(), 'error');
     assert.equal(store.getState().games.length, 1);
+  });
+});
+
+describe('v1 migration load', () => {
+  function v1Raw() {
+    const good = createGame({ name: 'Old', players: ['A'] }, 1);
+    const { finishedAt, shareToken, ...v1game } = good;
+    return JSON.stringify({ version: 1, games: [v1game] });
+  }
+
+  test('a migrated load backs up the original, then persists the v2 state', () => {
+    const raw = v1Raw();
+    const storage = fakeStorage({ [STORAGE_KEY]: raw });
+    const written = [];
+    const originalSet = storage.setItem;
+    storage.setItem = (k, v) => {
+      written.push(k);
+      originalSet(k, v);
+    };
+    const store = createStore(storage, () => 321);
+
+    assert.equal(store.getState().version, 2);
+    assert.equal(store.getState().games.length, 1);
+    assert.equal(store.getState().games[0].finishedAt, null);
+    assert.deepEqual(written, [BACKUP_PREFIX + 321, STORAGE_KEY]);
+    assert.equal(storage.data.get(BACKUP_PREFIX + 321), raw);
+    assert.notEqual(storage.data.get(STORAGE_KEY), raw);
+    assert.deepEqual(validateState(JSON.parse(storage.data.get(STORAGE_KEY))).state, store.getState());
+    assert.equal(JSON.parse(storage.data.get(STORAGE_KEY)).version, 2);
+  });
+
+  test('a migrated load persists once: a second load writes nothing and adds no backup', () => {
+    const storage = fakeStorage({ [STORAGE_KEY]: v1Raw() });
+    const first = createStore(storage, () => 100);
+    const keysAfterFirst = [...storage.data.keys()].sort();
+    const mainAfterFirst = storage.data.get(STORAGE_KEY);
+    assert.deepEqual(keysAfterFirst, [BACKUP_PREFIX + 100, STORAGE_KEY].sort());
+
+    const written = [];
+    const originalSet = storage.setItem;
+    storage.setItem = (k, v) => {
+      written.push(k);
+      originalSet(k, v);
+    };
+    const second = createStore(storage, () => 200);
+
+    assert.deepEqual(written, []);
+    assert.equal(storage.data.has(BACKUP_PREFIX + 200), false);
+    assert.deepEqual([...storage.data.keys()].sort(), keysAfterFirst);
+    assert.equal(storage.data.get(STORAGE_KEY), mainAfterFirst);
+    assert.deepEqual(second.getState(), first.getState());
+  });
+
+  test('when the load backup fails the main key is never written, and the backup is retried on the next persist', () => {
+    const raw = v1Raw();
+    const storage = fakeStorage({ [STORAGE_KEY]: raw });
+    const originalSet = storage.setItem;
+    let backupCalls = 0;
+    const written = [];
+    storage.setItem = (k, v) => {
+      if (k.startsWith(BACKUP_PREFIX)) {
+        backupCalls += 1;
+        if (backupCalls === 1) throw new Error('QuotaExceededError');
+      }
+      originalSet(k, v);
+      written.push(k);
+    };
+    const store = createStore(storage, () => 321);
+
+    assert.equal(store.getState().version, 2);
+    assert.equal(store.getState().games.length, 1);
+    assert.deepEqual(written, []);
+    assert.equal(storage.data.get(STORAGE_KEY), raw);
+
+    store.update((s) => upsertGame(s, sampleGame('New')));
+    assert.deepEqual(written, [BACKUP_PREFIX + 321, STORAGE_KEY]);
+    assert.equal(storage.data.get(BACKUP_PREFIX + 321), raw);
+  });
+
+  test('when the load backup always fails the main key is never written', () => {
+    const raw = v1Raw();
+    const storage = fakeStorage({ [STORAGE_KEY]: raw });
+    const attempted = [];
+    storage.setItem = (k) => {
+      attempted.push(k);
+      throw new Error('QuotaExceededError');
+    };
+    const store = createStore(storage, () => 5);
+    store.update((s) => upsertGame(s, sampleGame('New')));
+
+    assert.equal(attempted.includes(STORAGE_KEY), false);
+    assert.equal(storage.data.get(STORAGE_KEY), raw);
+    assert.equal(store.getPersistStatus(), 'error');
+    assert.equal(store.getState().games.length, 2);
+  });
+});
+
+describe('backupState', () => {
+  test('writes the current state under BACKUP_PREFIX + now and returns true', () => {
+    const storage = fakeStorage();
+    const store = createStore(storage, () => 777);
+    store.update((s) => upsertGame(s, sampleGame('Snap')));
+    assert.equal(store.backupState(), true);
+    assert.equal(storage.data.get(BACKUP_PREFIX + 777), JSON.stringify(store.getState()));
+  });
+
+  test('returns false when the write fails or storage is unavailable', () => {
+    const failing = createStore(throwingStorage(), () => 1);
+    assert.equal(failing.backupState(), false);
+    assert.equal(createStore(null, () => 1).backupState(), false);
+  });
+
+  test('prunes to the newest 5 backups by numeric suffix and leaves other keys alone', () => {
+    const storage = fakeStorage({ other: 'x' });
+    let t = 0;
+    const times = [2, 10, 9, 100, 1, 8, 3];
+    const store = createStore(storage, () => times[t++]);
+    const results = times.map(() => store.backupState());
+    assert.deepEqual(results, times.map(() => true));
+    const backups = [...storage.data.keys()].filter((k) => k.startsWith(BACKUP_PREFIX));
+    assert.deepEqual(
+      backups.map((k) => Number(k.slice(BACKUP_PREFIX.length))).sort((a, b) => b - a),
+      [100, 10, 9, 8, 3],
+    );
+    assert.equal(storage.data.get('other'), 'x');
+  });
+
+  test('a failed backup does not prune existing backups', () => {
+    const storage = fakeStorage();
+    for (let i = 1; i <= 6; i++) storage.setItem(BACKUP_PREFIX + i, '{}');
+    const originalSet = storage.setItem;
+    storage.setItem = (k, v) => {
+      if (k === BACKUP_PREFIX + 50) throw new Error('QuotaExceededError');
+      originalSet(k, v);
+    };
+    const store = createStore(storage, () => 50);
+    assert.equal(store.backupState(), false);
+    assert.equal([...storage.data.keys()].filter((k) => k.startsWith(BACKUP_PREFIX)).length, 6);
   });
 });

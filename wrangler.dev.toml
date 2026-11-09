@@ -1,0 +1,13 @@
+# Local dev only: same as wrangler.toml minus routes (routes make wrangler dev rewrite Origin, which breaks Neon Auth origin checks).
+name = "tabletop-scorecard"
+main = "worker/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true
+
+[vars]
+NEON_AUTH_URL = "https://ep-summer-breeze-bdgam8p2.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth"
