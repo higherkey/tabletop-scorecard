@@ -20,9 +20,23 @@
 </head>
 <body>
   <header class="app-header">
-    <a class="app-title" href="#/"><img src="./icons/icon.svg" alt="" width="28" height="28"> Scorecard</a>
+    <div class="app-header-inner">
+      <a class="brand" href="#/"><img src="./icons/icon.svg" alt="" width="28" height="28"> Scorecard</a>
+      <nav class="top-nav" aria-label="Primary">
+        <a class="nav-link" href="#/" data-route="home">Games</a>
+        <a class="nav-link" href="#/stats" data-route="stats">Stats</a>
+        <a class="nav-link" href="#/settings" data-route="settings">Settings</a>
+      </nav>
+      <span id="sync-status" class="sync-status" role="status" hidden></span>
+      <a id="account-link" class="account-link" href="#/account" aria-label="Account"></a>
+    </div>
   </header>
   <main id="app" class="app-main"></main>
+  <nav class="tab-bar" aria-label="Primary">
+    <a class="tab" href="#/" data-route="home"><span class="tab-icon"></span><span>Games</span></a>
+    <a class="tab" href="#/stats" data-route="stats"><span class="tab-icon"></span><span>Stats</span></a>
+    <a class="tab" href="#/settings" data-route="settings"><span class="tab-icon"></span><span>Settings</span></a>
+  </nav>
   <dialog id="keypad" class="keypad" aria-labelledby="keypad-title">
     <div class="keypad-body">
       <p id="keypad-title" class="keypad-title"></p>

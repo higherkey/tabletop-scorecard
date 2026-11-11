@@ -7,7 +7,7 @@ const KEY_ACTIONS = new Map([
   ['-', 'neg'],
 ]);
 
-export function createKeypad(dialog) {
+export function createKeypad(dialog, { onKey } = {}) {
   const titleEl = dialog.querySelector('#keypad-title');
   const displayEl = dialog.querySelector('#keypad-display');
   const doneBtn = dialog.querySelector('[data-key="done"]');
@@ -42,6 +42,7 @@ export function createKeypad(dialog) {
   }
 
   function press(key) {
+    onKey?.(key);
     if (key === 'done') return finish(currentValue(), false);
     if (key === 'next') return finish(currentValue(), true);
     if (key === 'clear') return finish(null, false);

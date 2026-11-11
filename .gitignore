@@ -3,3 +3,5 @@ node_modules/
 .DS_Store
 test-results/
 e2e/screenshots/
+dist/
+.wrangler/
